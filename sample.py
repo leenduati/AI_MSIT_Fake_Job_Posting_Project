@@ -95,6 +95,17 @@ model = LogisticRegression(max_iter=1000)
 model.fit(X_train, y_train)
 
 # ============================
+# Save Model and Vectorizer
+# ============================
+import joblib
+
+joblib.dump(model, "model.pkl")
+joblib.dump(vectorizer, "vectorizer.pkl")
+
+print("Model and vectorizer saved successfully!")
+
+
+# ============================
 # 9. Model Evaluation
 # ============================
 # Predict labels for the test set
