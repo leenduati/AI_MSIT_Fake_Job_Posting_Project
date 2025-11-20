@@ -1,6 +1,6 @@
-# ============================================
-# 1. IMPORT LIBRARIES
-# ============================================
+# ============================
+# 1. Import Required Libraries
+# ============================
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -9,167 +9,166 @@ import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score,
+    f1_score, roc_auc_score, classification_report
+)
+import joblib
 
 sns.set(style="whitegrid")
 
 
-# ============================================
-# 2. LOAD DATA
-# ============================================
+# ============================
+# 2. Load Dataset
+# ============================
 df = pd.read_csv("fake_job_postings.csv")
-
-print("Dataset Shape:", df.shape)
 print(df.head())
+df.info()
+print("\nMissing Values:\n", df.isnull().sum())
 
 
-# ============================================
-# 3. CLEANING + TEXT PREPROCESSING
-# ============================================
-df['description'] = df['description'].fillna("")
+# ============================
+# 3. Data Cleaning
+# ============================
+columns_to_drop = [
+    'telecommuting', 'has_company_logo', 'has_questions',
+    'employment_type', 'required_experience', 'required_education'
+]
+df.drop(columns=columns_to_drop, inplace=True, errors='ignore')
 
-# Target (y)
-df['fraudulent'] = df['fraudulent'].astype(int)
+# Fill missing text fields
+text_columns = ['title', 'company_profile', 'description', 'requirements', 'benefits']
+for col in text_columns:
+    df[col] = df[col].fillna("")
 
-# Combine multiple text fields into one if needed
-df['text'] = (
-    df['title'].fillna("") + " " +
-    df['company_profile'].fillna("") + " " +
-    df['description'] + " " +
-    df['requirements'].fillna("") + " " +
-    df['benefits'].fillna("")
+
+# ============================
+# 4. Exploratory Analysis
+# ============================
+print("\nClass Distribution:\n", df['fraudulent'].value_counts())
+
+sns.countplot(x='fraudulent', data=df)
+plt.title("Distribution of Real vs Fake Job Postings")
+plt.show()
+
+
+# ============================
+# 5. Feature Engineering (TF-IDF)
+# ============================
+df["text"] = (
+    df["title"] + " "
+    + df["description"] + " "
+    + df["company_profile"] + " "
+    + df["requirements"] + " "
+    + df["benefits"]
 )
 
-print("Text column ready!")
+vectorizer = TfidfVectorizer(stop_words="english", max_features=5000)
+X = vectorizer.fit_transform(df["text"])
+y = df["fraudulent"]
 
 
-# ============================================
-# 4. IMPROVED EXPLORATORY DATA ANALYSIS (EDA)
-# ============================================
-
-# 4.1 Distribution of Fake vs Real Jobs
-plt.figure(figsize=(6,4))
-ax = df['fraudulent'].value_counts().plot(kind='bar')
-ax.set_xticklabels(['Real (0)', 'Fake (1)'], rotation=0)
-plt.title("Fraudulent vs Real Job Postings")
-plt.xlabel("Class")
-plt.ylabel("Count")
-plt.show()
-
-print(df['fraudulent'].value_counts(normalize=True))
-
-# 4.2 Missing Values Heatmap
-plt.figure(figsize=(14,6))
-sns.heatmap(df.isnull(), cbar=False)
-plt.title("Missing Values Heatmap")
-plt.show()
-
-# 4.3 Word count distribution
-df['word_count'] = df['text'].apply(lambda x: len(x.split()))
-
-plt.figure(figsize=(10,5))
-sns.histplot(df['word_count'], kde=True)
-plt.title("Distribution of Word Count")
-plt.xlabel("Number of Words")
-plt.ylabel("Frequency")
-plt.show()
-
-# 4.4 Compare word count of fake vs real
-plt.figure(figsize=(10,5))
-sns.boxplot(x='fraudulent', y='word_count', data=df)
-plt.title("Word Count Comparison: Fake vs Real Jobs")
-plt.xlabel("Fraudulent")
-plt.ylabel("Word Count")
-plt.show()
-
-# 4.5 Most common words in fake vs real
-from collections import Counter
-import re
-
-def clean_text(text):
-    text = text.lower()
-    text = re.sub(r'[^a-zA-Z ]', '', text)
-    return text
-
-df['clean_text'] = df['text'].apply(clean_text)
-
-fake_text = " ".join(df[df['fraudulent']==1]['clean_text'])
-real_text = " ".join(df[df['fraudulent']==0]['clean_text'])
-
-fake_words = Counter(fake_text.split()).most_common(20)
-real_words = Counter(real_text.split()).most_common(20)
-
-fake_df = pd.DataFrame(fake_words, columns=['word','count'])
-real_df = pd.DataFrame(real_words, columns=['word','count'])
-
-# plot
-plt.figure(figsize=(12,5))
-sns.barplot(data=fake_df, x='word', y='count')
-plt.xticks(rotation=90)
-plt.title("Most Common Words in Fake Job Posts")
-plt.show()
-
-plt.figure(figsize=(12,5))
-sns.barplot(data=real_df, x='word', y='count')
-plt.xticks(rotation=90)
-plt.title("Most Common Words in Real Job Posts")
-plt.show()
-
-
-# ============================================
-# 5. TF-IDF VECTORISATION
-# ============================================
-tfidf = TfidfVectorizer(stop_words='english', max_features=5000)
-
-X = tfidf.fit_transform(df['clean_text'])
-y = df['fraudulent']
-
-print("TF-IDF Matrix Shape:", X.shape)
-
-
-# ============================================
-# 6. TRAIN / TEST SPLIT
-# ============================================
+# ============================
+# 6. Train-Test Split
+# ============================
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
+    X, y, test_size=0.20, random_state=42, stratify=y
 )
 
-print("Training set size:", X_train.shape)
-print("Test set size:", X_test.shape)
+print("Training size:", X_train.shape)
+print("Test size:", X_test.shape)
 
 
-# ============================================
-# 7. TRAIN MODEL (Logistic Regression)
-# ============================================
-model = LogisticRegression(max_iter=500)
-model.fit(X_train, y_train)
+# ============================
+# 7. Logistic Regression Model
+# ============================
+log_model = LogisticRegression(max_iter=1000)
+log_model.fit(X_train, y_train)
+
+log_pred = log_model.predict(X_test)
+log_proba = log_model.predict_proba(X_test)[:, 1]
+
+print("\n=== Logistic Regression Report ===")
+print(classification_report(y_test, log_pred))
 
 
-# ============================================
-# 8. EVALUATION
-# ============================================
-y_pred = model.predict(X_test)
+# ============================
+# 8. Random Forest Model
+# ============================
+rf_model = RandomForestClassifier(
+    n_estimators=200,
+    random_state=42,
+    n_jobs=-1,
+    class_weight="balanced"   # improves detection of minority class
+)
+rf_model.fit(X_train, y_train)
 
-print("Test Accuracy:", accuracy_score(y_test, y_pred))
-print("\nClassification Report:\n", classification_report(y_test, y_pred))
+rf_pred = rf_model.predict(X_test)
+rf_proba = rf_model.predict_proba(X_test)[:, 1]
 
-cm = confusion_matrix(y_test, y_pred)
+print("\n=== Random Forest Report ===")
+print(classification_report(y_test, rf_pred))
 
-plt.figure(figsize=(6,4))
-sns.heatmap(cm, annot=True, fmt='d')
-plt.title("Confusion Matrix")
-plt.xlabel("Predicted")
-plt.ylabel("Actual")
+
+# ============================
+# 9. Model Evaluation Function
+# ============================
+def evaluate(y_true, y_pred, y_prob):
+    return [
+        accuracy_score(y_true, y_pred),
+        precision_score(y_true, y_pred),
+        recall_score(y_true, y_pred),
+        f1_score(y_true, y_pred),
+        roc_auc_score(y_true, y_prob)
+    ]
+
+
+log_results = evaluate(y_test, log_pred, log_proba)
+rf_results = evaluate(y_test, rf_pred, rf_proba)
+
+comparison_df = pd.DataFrame(
+    [log_results, rf_results],
+    columns=["Accuracy", "Precision", "Recall", "F1-Score", "ROC-AUC"],
+    index=["Logistic Regression", "Random Forest"]
+)
+
+print("\n=== Model Performance Comparison ===")
+print(comparison_df)
+
+
+# ============================
+# 10. Performance Visualization
+# ============================
+metrics = ["Accuracy", "Precision", "Recall", "F1-Score", "ROC-AUC"]
+x = np.arange(len(metrics))
+width = 0.35
+
+plt.figure(figsize=(10, 6))
+plt.bar(x - width/2, log_results, width, label="Logistic Regression")
+plt.bar(x + width/2, rf_results, width, label="Random Forest")
+plt.xticks(x, metrics)
+plt.ylabel("Score")
+plt.title("Logistic Regression vs Random Forest Performance")
+plt.legend()
+plt.tight_layout()
 plt.show()
 
 
-# ============================================
-# 9. SAMPLE PREDICTION FUNCTION
-# ============================================
-def predict_job(text):
-    text = clean_text(text)
-    vect = tfidf.transform([text])
-    pred = model.predict(vect)[0]
-    return "Fake Job Posting" if pred == 1 else "Real Job Posting"
+# ============================
+# 11. Save Best Model (Random Forest)
+# ============================
+joblib.dump(rf_model, "model.pkl")
+joblib.dump(vectorizer, "vectorizer.pkl")
 
-print(predict_job("We are hiring urgently. No experience needed. Send money for registration."))
+print("\nRandom Forest model and TF-IDF vectorizer saved.")
+
+
+# ============================
+# 12. Sample Prediction Test
+# ============================
+sample = ["Looking for a data scientist with 3+ years experience in AI and ML"]
+sample_vec = vectorizer.transform(sample)
+sample_pred = rf_model.predict(sample_vec)
+
+print("\nSample Prediction (0 = Real, 1 = Fake):", sample_pred[0])
