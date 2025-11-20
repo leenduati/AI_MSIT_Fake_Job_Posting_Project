@@ -1,141 +1,175 @@
-# AI Mini-Project: Fake Job Postings Detection
-# ============================
-# 1. Mount Google Drive
-# ============================
-# This allows Colab to access files stored in your Google Drive.
-# from google.colab import drive
-# drive.mount('/content/drive')
-
-# ============================
-# 2. Import Required Libraries
-# ============================
-# pandas & numpy for data handling
-# matplotlib & seaborn for visualization
-# sklearn for machine learning
+# ============================================
+# 1. IMPORT LIBRARIES
+# ============================================
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 
-# ============================
-# 3. Load Dataset
-# ============================
-# Reads the CSV from Google Drive into a pandas DataFrame called df
-file_path = 'fake_job_postings.csv'
-df = pd.read_csv(file_path)
+sns.set(style="whitegrid")
 
-# Display first 5 rows to inspect the data
+
+# ============================================
+# 2. LOAD DATA
+# ============================================
+df = pd.read_csv("fake_job_postings.csv")
+
+print("Dataset Shape:", df.shape)
 print(df.head())
 
-# Check dataset structure and missing values
-df.info()
-print("\nMissing Values Per Column:\n", df.isnull().sum())
 
-# ============================
-# 4. Data Cleaning
-# ============================
-# Drop irrelevant columns to simplify the dataset
-columns_to_drop = ['telecommuting', 'has_company_logo', 'has_questions', 
-                   'employment_type', 'required_experience', 'required_education']
-df.drop(columns=columns_to_drop, inplace=True, errors='ignore')
+# ============================================
+# 3. CLEANING + TEXT PREPROCESSING
+# ============================================
+df['description'] = df['description'].fillna("")
 
-# Fill missing text fields with empty strings to prevent errors
-text_columns = ['title', 'company_profile', 'description', 'requirements', 'benefits']
-for col in text_columns:
-    if col in df.columns:
-        df[col] = df[col].fillna('')
+# Target (y)
+df['fraudulent'] = df['fraudulent'].astype(int)
 
-# ============================
-# 5. Exploratory Data Analysis (EDA)
-# ============================
-# Check the balance of real (0) vs fake (1) job postings
-print("Class Distribution:\n", df['fraudulent'].value_counts())
-
-# Visualize the distribution
-sns.countplot(x='fraudulent', data=df)
-plt.title('Distribution of Real vs Fake Job Postings')
-plt.show()
-
-# Optional: check job description length distribution
-df['description_length'] = df['description'].apply(len)
-sns.histplot(df['description_length'], bins=50)
-plt.title('Job Description Length Distribution')
-plt.show()
-
-# ============================
-# 6. Feature Engineering
-# ============================
-# Combine title, description, and company_profile into one column for text analysis
-df['text'] = df['title'] + ' ' + df['description'] + ' ' + df['company_profile']
-
-# Convert text into numerical features using TF-IDF
-vectorizer = TfidfVectorizer(stop_words='english', max_features=5000)
-X = vectorizer.fit_transform(df['text'])
-
-# Set target variable (0 = Real, 1 = Fake)
-y = df['fraudulent']
-
-# ============================
-# 7. Train-Test Split
-# ============================
-# Split dataset into training (80%) and testing (20%) sets
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
+# Combine multiple text fields into one if needed
+df['text'] = (
+    df['title'].fillna("") + " " +
+    df['company_profile'].fillna("") + " " +
+    df['description'] + " " +
+    df['requirements'].fillna("") + " " +
+    df['benefits'].fillna("")
 )
 
-# ============================
-# 8. Model Training
-# ============================
-# Initialize Logistic Regression model and train it
-model = LogisticRegression(max_iter=1000)
-model.fit(X_train, y_train)
-
-# ============================
-# Save Model and Vectorizer
-# ============================
-import joblib
-
-joblib.dump(model, "model.pkl")
-joblib.dump(vectorizer, "vectorizer.pkl")
-
-print("Model and vectorizer saved successfully!")
+print("Text column ready!")
 
 
-# ============================
-# 9. Model Evaluation
-# ============================
-# Predict labels for the test set
-y_pred = model.predict(X_test)
+# ============================================
+# 4. IMPROVED EXPLORATORY DATA ANALYSIS (EDA)
+# ============================================
 
-# Accuracy of the model
-acc = accuracy_score(y_test, y_pred)
-print(f"Model Accuracy: {acc:.4f}")
-
-# Confusion matrix visualization
-cm = confusion_matrix(y_test, y_pred)
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Real', 'Fake'], yticklabels=['Real', 'Fake'])
-plt.title('Confusion Matrix')
+# 4.1 Distribution of Fake vs Real Jobs
+plt.figure(figsize=(6,4))
+ax = df['fraudulent'].value_counts().plot(kind='bar')
+ax.set_xticklabels(['Real (0)', 'Fake (1)'], rotation=0)
+plt.title("Fraudulent vs Real Job Postings")
+plt.xlabel("Class")
+plt.ylabel("Count")
 plt.show()
 
-# Detailed classification report
-print(classification_report(y_test, y_pred))
+print(df['fraudulent'].value_counts(normalize=True))
 
-# ============================
-# 10. Predict on New Job Postings
-# ============================
-# Example new job posting
-new_job_post = ["Looking for a data scientist with 3+ years experience in AI and ML"]
+# 4.2 Missing Values Heatmap
+plt.figure(figsize=(14,6))
+sns.heatmap(df.isnull(), cbar=False)
+plt.title("Missing Values Heatmap")
+plt.show()
 
-# Transform text to numerical features using the same TF-IDF vectorizer
-new_vector = vectorizer.transform(new_job_post)
+# 4.3 Word count distribution
+df['word_count'] = df['text'].apply(lambda x: len(x.split()))
 
-# Predict if the posting is real (0) or fake (1)
-prediction = model.predict(new_vector)
-print("Prediction (0 = Real, 1 = Fake):", prediction[0])
+plt.figure(figsize=(10,5))
+sns.histplot(df['word_count'], kde=True)
+plt.title("Distribution of Word Count")
+plt.xlabel("Number of Words")
+plt.ylabel("Frequency")
+plt.show()
+
+# 4.4 Compare word count of fake vs real
+plt.figure(figsize=(10,5))
+sns.boxplot(x='fraudulent', y='word_count', data=df)
+plt.title("Word Count Comparison: Fake vs Real Jobs")
+plt.xlabel("Fraudulent")
+plt.ylabel("Word Count")
+plt.show()
+
+# 4.5 Most common words in fake vs real
+from collections import Counter
+import re
+
+def clean_text(text):
+    text = text.lower()
+    text = re.sub(r'[^a-zA-Z ]', '', text)
+    return text
+
+df['clean_text'] = df['text'].apply(clean_text)
+
+fake_text = " ".join(df[df['fraudulent']==1]['clean_text'])
+real_text = " ".join(df[df['fraudulent']==0]['clean_text'])
+
+fake_words = Counter(fake_text.split()).most_common(20)
+real_words = Counter(real_text.split()).most_common(20)
+
+fake_df = pd.DataFrame(fake_words, columns=['word','count'])
+real_df = pd.DataFrame(real_words, columns=['word','count'])
+
+# plot
+plt.figure(figsize=(12,5))
+sns.barplot(data=fake_df, x='word', y='count')
+plt.xticks(rotation=90)
+plt.title("Most Common Words in Fake Job Posts")
+plt.show()
+
+plt.figure(figsize=(12,5))
+sns.barplot(data=real_df, x='word', y='count')
+plt.xticks(rotation=90)
+plt.title("Most Common Words in Real Job Posts")
+plt.show()
 
 
+# ============================================
+# 5. TF-IDF VECTORISATION
+# ============================================
+tfidf = TfidfVectorizer(stop_words='english', max_features=5000)
 
+X = tfidf.fit_transform(df['clean_text'])
+y = df['fraudulent']
+
+print("TF-IDF Matrix Shape:", X.shape)
+
+
+# ============================================
+# 6. TRAIN / TEST SPLIT
+# ============================================
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+print("Training set size:", X_train.shape)
+print("Test set size:", X_test.shape)
+
+
+# ============================================
+# 7. TRAIN MODEL (Logistic Regression)
+# ============================================
+model = LogisticRegression(max_iter=500)
+model.fit(X_train, y_train)
+
+
+# ============================================
+# 8. EVALUATION
+# ============================================
+y_pred = model.predict(X_test)
+
+print("Test Accuracy:", accuracy_score(y_test, y_pred))
+print("\nClassification Report:\n", classification_report(y_test, y_pred))
+
+cm = confusion_matrix(y_test, y_pred)
+
+plt.figure(figsize=(6,4))
+sns.heatmap(cm, annot=True, fmt='d')
+plt.title("Confusion Matrix")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.show()
+
+
+# ============================================
+# 9. SAMPLE PREDICTION FUNCTION
+# ============================================
+def predict_job(text):
+    text = clean_text(text)
+    vect = tfidf.transform([text])
+    pred = model.predict(vect)[0]
+    return "Fake Job Posting" if pred == 1 else "Real Job Posting"
+
+print(predict_job("We are hiring urgently. No experience needed. Send money for registration."))
